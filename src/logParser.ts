@@ -77,6 +77,8 @@ export default class LogParser {
     private log: Log;
     private file: File;
 
+    private pendingMessages: Message[] = [];
+
     private parserState: ParserState = ParserState.Uninitialized;
 
     public initializeLog(file: File): Log {
@@ -116,7 +118,13 @@ export default class LogParser {
                     break;
             }
         }
-        this.log.messages.push(msg);
+        this.pendingMessages.push(msg);
+        if (this.pendingMessages.length > 50_000) {
+            runInAction(() => {
+                this.log.messages = this.log.messages.concat(this.pendingMessages);
+            })
+            this.pendingMessages = [];
+        }
     }
 
     private readLogLine(line: string, currentMessage: Message | undefined, firstLine: boolean) {
@@ -161,11 +169,13 @@ export default class LogParser {
             let lines = value.split("\n").map(row => row.trimEnd());
             let firstLine = true;
             for (let line of lines) {
-                runInAction(() => {
-                    currentMessage = this.readLogLine(line, currentMessage, firstLine);
-                });
+                currentMessage = this.readLogLine(line, currentMessage, firstLine);
                 firstLine = false;
             }
         }
+        runInAction(() => {
+            this.log.messages = this.log.messages.concat(this.pendingMessages);
+            this.pendingMessages = [];
+        })
     }
 }
