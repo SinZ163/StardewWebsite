@@ -50,7 +50,6 @@ let tooltipTimeout: number|null;
 
 const InnerGraph = ({showAxis, data, height, width, children, margin, top, colorScale, showTooltip, hideTooltip}: InnerGraphProps) => {
     if (data.length == 0) return null;
-    console.log(data.length);
     const getColor = (d: LogMsg) => colorScale(d.Metadata.ModId);
 
     const xScale = scaleLinear({
@@ -128,7 +127,6 @@ const Graph = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, t
         setDataSet(data);
     }, [log.messages.length]);
     
-    console.log(dataset[0]);
     const keys = dataset.map(row => row.Metadata.ModId).filter((row, i, arr) => arr.indexOf(row) === i);
     let colors: string[] = [];
     if (keys.length > 0) {

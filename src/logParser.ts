@@ -119,9 +119,9 @@ export default class LogParser {
         this.log.messages.push(msg);
     }
 
-    private readLogLine(line: string, isNewMessage: boolean, currentMessage: Message | undefined, firstLine: boolean) {
+    private readLogLine(line: string, currentMessage: Message | undefined, firstLine: boolean) {
         let output = messageHeaderPattern.exec(line) as unknown as RawMessage;
-        isNewMessage = output !== null;
+        let isNewMessage = output !== null;
         if (isNewMessage) {
             if (currentMessage) {
                 this.processMessage(currentMessage);
@@ -138,20 +138,23 @@ export default class LogParser {
         } else if (currentMessage) {
             if (firstLine) {
                 currentMessage.text[currentMessage.text.length - 1] += line;
+                if (messageHeaderPattern.test(currentMessage.text[currentMessage.text.length - 1])) {
+                    let lastMessage = currentMessage.text.pop()!;
+                    currentMessage = this.readLogLine(lastMessage, currentMessage, true);
+                }
             } else {
                 currentMessage.text.push(line);
             }
         } else {
             throw new Error("Not a SMAPI Log");
         }
-        return { isNewMessage, currentMessage };
+        return currentMessage;
     }
 
     public async parseLog() {
         const fileStream = this.file.stream();
         const reader = fileStream.pipeThrough(new TextDecoderStream()).getReader();
         let currentMessage: Message|undefined = undefined;
-        let isNewMessage: boolean = false;
         while (true) {
             const {done, value} = await reader.read();
             if (done) break;
@@ -159,7 +162,7 @@ export default class LogParser {
             let firstLine = true;
             for (let line of lines) {
                 runInAction(() => {
-                    ({ isNewMessage, currentMessage } = this.readLogLine(line, isNewMessage, currentMessage, firstLine));
+                    currentMessage = this.readLogLine(line, currentMessage, firstLine);
                 });
                 firstLine = false;
             }
