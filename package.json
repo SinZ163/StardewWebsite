@@ -1,0 +1,39 @@
+{
+  "name": "StardewWebsite",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "esbuild src/index.tsx --bundle --outfile=public/js/main.js --servedir=public",
+    "build": "esbuild src/index.tsx --bundle --outfile=dist/js/main.js",
+    "postbuild": "copyfiles -u 1 public/* dist"
+  },
+  "dependencies": {
+    "@visx/axis": "^2.10.0",
+    "@visx/brush": "^2.10.1",
+    "@visx/group": "^2.10.0",
+    "@visx/scale": "^2.2.2",
+    "@visx/shape": "^2.10.0",
+    "@visx/tooltip": "^2.10.0",
+    "@visx/xychart": "^2.10.0",
+    "d3-interpolate": "^3.0.1",
+    "d3-scale-chromatic": "^3.0.0",
+    "esbuild": "^0.14.47",
+    "grommet": "^2.27.0",
+    "mobx": "^6.6.2",
+    "mobx-react-lite": "^3.4.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-error-boundary": "^3.1.4",
+    "react-spring": "^9.4.5",
+    "styled-components": "^5.3.6"
+  },
+  "devDependencies": {
+    "@types/d3-scale-chromatic": "^3.0.0",
+    "@types/react": "^18.0.14",
+    "@types/react-dom": "^18.0.5",
+    "@types/styled-components": "^5.1.26",
+    "@types/wicg-file-system-access": "^2020.9.5",
+    "copyfiles": "^2.4.1"
+  }
+}
