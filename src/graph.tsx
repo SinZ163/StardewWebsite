@@ -148,6 +148,38 @@ const InnerGraph = ({showAxis, data, height, width, children, margin, top, color
 
 type LogFilter = (data: LogMsg) => boolean;
 
+const percentFormatter = new Intl.NumberFormat("default", {style: "percent", maximumFractionDigits: 2});
+const Tooltip = ({log, parentDuration}: {log: LogMsg, parentDuration?: number}) => {
+    // TODO: When non duration events show up, we really need a way to make it a discriminated union
+    let eventInfo = log.Metadata as DurationEvent;
+
+    let parentTime = parentDuration ? parentDuration : eventInfo.Duration;
+
+    let innerEvents = eventInfo.InnerDetails.concat()
+        .sort((a,b) => (b.Metadata as DurationEvent).Duration - (a.Metadata as DurationEvent).Duration);
+    let extra: JSX.Element|null = null;
+    if (innerEvents.length > 30) {
+        let extraEvents = innerEvents.splice(30, innerEvents.length - 30);
+        let extraDuration = extraEvents.reduce((prev, current) => prev + (current.Metadata as DurationEvent).Duration, 0);
+        extra = <li>.. And {extraEvents.length} more - {timeConversion(extraDuration)} ({percentFormatter.format(extraDuration / parentTime)})</li>;
+    }
+
+    return (
+        <div>
+            <div>
+                {eventInfo.ModId} ({eventInfo.EventType} {eventInfo.Details})
+                 - {timeConversion(eventInfo.Duration)}
+                 {parentDuration && ` (${percentFormatter.format(eventInfo.Duration / parentDuration)})`}
+            </div>
+            <ol>
+                {innerEvents
+                    .map(e => <li><Tooltip log={e} parentDuration={parentTime}/></li>)}
+                {extra}
+            </ol>
+        </div>
+    );
+}
+
 const Graph = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, tooltipTop, tooltipLeft, showTooltip, hideTooltip}: {log: Log} & WithTooltipProvidedProps<LogMsg>) => {
     const [dataset, setDataSet] = useState<LogMsg[]>([]);
     useMemo(() => {
@@ -182,8 +214,8 @@ const Graph = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, t
 
     const margin = {
         top: 20,
-        left: 50,
-        right: 0,
+        left: 80,
+        right: 30, // right margin is toaccount for the last event having width to it
         bottom: 20
     }
     
@@ -229,7 +261,7 @@ const Graph = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, t
         </svg>
         {tooltipOpen && tooltipData && (
             <TooltipWithBounds top={tooltipTop} left={(tooltipLeft ?? 0) + 50}>
-                <pre>{JSON.stringify(tooltipData, undefined, 4)}</pre>
+                <Tooltip log={tooltipData} />
             </TooltipWithBounds>
         )}
     </div>
