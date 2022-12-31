@@ -48,6 +48,38 @@ interface InnerGraphProps extends PropsWithChildren {
 
 let tooltipTimeout: number|null;
 
+// Based off https://stackoverflow.com/a/58826445 with added millisecond support
+function timeConversion(duration: number) {
+    const portions: string[] = [];
+  
+    const msInHour = 1000 * 60 * 60;
+    const hours = Math.trunc(duration / msInHour);
+    if (hours > 0) {
+      portions.push(hours + 'h');
+      duration = duration - (hours * msInHour);
+    }
+  
+    const msInMinute = 1000 * 60;
+    const minutes = Math.trunc(duration / msInMinute);
+    if (minutes > 0) {
+      portions.push(minutes + 'm');
+      duration = duration - (minutes * msInMinute);
+    }
+  
+    const seconds = Math.trunc(duration / 1000);
+    if (seconds > 0) {
+      portions.push(seconds + 's');
+      duration = duration - (seconds * 1000);
+    }
+  
+    const milliseconds = Math.trunc(duration);
+    if (milliseconds > 0) {
+      portions.push(milliseconds + 'ms');
+    }
+  
+    return portions.join(' ');
+  }
+
 const InnerGraph = ({showAxis, data, height, width, children, margin, top, colorScale, showTooltip, hideTooltip}: InnerGraphProps) => {
     if (data.length == 0) return null;
     const getColor = (d: LogMsg) => colorScale(d.Metadata.ModId);
@@ -101,11 +133,12 @@ const InnerGraph = ({showAxis, data, height, width, children, margin, top, color
             {showAxis && <>
                 <AxisLeft
                     scale={yScale}
-                    tickFormat={(v => v.toString())}
+                    tickFormat={(v => timeConversion(v as number))}
                 />
                 <AxisBottom
                     scale={xScale}
                     top={innerHeight}
+                    tickFormat={(v => timeConversion(v as number))}
                 />
             </>}
             {children}
