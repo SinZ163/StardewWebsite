@@ -73,13 +73,13 @@ const LogEntry = observer(({log}: {log: Log}) => <Tabs>
             </tbody>
         </table>
     </Tab>
-    <Tab title="Log Graphs" disabled>
+    <Tab title="Log Graphs (Coming soon)" disabled>
         <Text>Come back soon</Text>
     </Tab>
     <Tab title="Profiler Analysis (Column Chart)" disabled={!hasProfiler2(log)}>
         <Graph log={log} />
     </Tab>
-    <Tab title="Profiler Analysis (Alternative)" disabled={!hasProfiler2(log)}>
+    <Tab title="Profiler Analysis (Alternative Experimental)" disabled={!hasProfiler2(log)}>
         <Graph2 log={log} />
     </Tab>
 </Tabs>);

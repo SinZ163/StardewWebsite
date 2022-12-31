@@ -113,6 +113,8 @@ const InnerGraph = ({showAxis, data, height, width, children, margin, top, color
     </>
 }
 
+type LogFilter = (data: LogMsg) => boolean;
+
 const Graph = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, tooltipTop, tooltipLeft, showTooltip, hideTooltip}: {log: Log} & WithTooltipProvidedProps<LogMsg>) => {
     const [dataset, setDataSet] = useState<LogMsg[]>([]);
     useMemo(() => {
@@ -126,6 +128,7 @@ const Graph = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, t
         .map(row => JSON.parse(row) as LogMsg);
         setDataSet(data);
     }, [log.messages.length]);
+    const [filter, setFilter] = useState<LogFilter|null>(null);
     
     const keys = dataset.map(row => row.Metadata.ModId).filter((row, i, arr) => arr.indexOf(row) === i);
     let colors: string[] = [];
@@ -140,9 +143,9 @@ const Graph = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, t
     });
 
     let chartData = dataset;
-    //if (this.state.filter) {
-    //    chartData = chartData.filter(this.state.filter);
-    //}
+    if (filter) {
+        chartData = chartData.filter(filter);
+    }
 
     const margin = {
         top: 20,
@@ -155,7 +158,7 @@ const Graph = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, t
         return <div />;
     }
     const brushXScale = scaleLinear({
-        range: [0, 2000 - margin.left - margin.right],
+        range: [0, window.innerWidth - margin.left - margin.right],
         domain: [getOccuredAt(dataset[0]), getOccuredAt(dataset[dataset.length - 1])],
     })
     const brushYScale = scaleLinear({
@@ -163,23 +166,33 @@ const Graph = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, t
         range: [0, 1]
     });
 
+    const onBrushChange = (domain: Bounds|null) => {
+        if (!domain) return;
+        const {x0, x1} = domain;
+        console.log(x0, x1, x0 - margin.left, x1 - margin.left);
+        setFilter(() => (data => {
+            return getOccuredAt(data) >= x0 && getOccuredAt(data) <= x1})
+        );
+    }
+
     return <div>
-        <svg width={2000} height={750}>
-            <InnerGraph data={chartData} showAxis height={500} width={2000} margin={margin} colorScale={colorScale} showTooltip={showTooltip} hideTooltip={hideTooltip} />
-            {/*<InnerGraph data={dataset} showAxis={true} height={200} width={2000} margin={margin} top={550} colorScale={colorScale}>
+        <svg width={window.innerWidth} height={750}>
+            <InnerGraph data={chartData} showAxis height={500} width={window.innerWidth} margin={margin} colorScale={colorScale} showTooltip={showTooltip} hideTooltip={hideTooltip} />
+            <InnerGraph data={dataset} showAxis height={200} width={window.innerWidth} margin={margin} top={550} colorScale={colorScale}>
                 <Brush
                     xScale={brushXScale}
                     yScale={brushYScale}
-                    width={2000 - margin.left - margin.right}
+                    margin={{left: margin.left, right: margin.right}}
+                    width={window.innerWidth - margin.left - margin.right}
                     height={200 - margin.top - margin.bottom}
                     resizeTriggerAreas={['left', 'right']}
                     brushDirection="horizontal"
                     handleSize={8}
-                    //onChange={this.onBrushChange}
-                    //onClick={() => this.setState({filter: undefined})}
+                    onChange={onBrushChange}
+                    onClick={() => setFilter(null)}
                     useWindowMoveEvents
                 />
-            </InnerGraph>*/}
+            </InnerGraph>
         </svg>
         {tooltipOpen && tooltipData && (
             <TooltipWithBounds top={tooltipTop} left={(tooltipLeft ?? 0) + 50}>
