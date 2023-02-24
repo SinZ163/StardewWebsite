@@ -1,11 +1,13 @@
 import { Log, LogLevel } from "./logParser";
 import { AxisLeft, AxisTop } from "@visx/axis";
 import { Group } from "@visx/group";
-import { scaleLinear } from "@visx/scale";
+import { scaleLinear, scaleOrdinal } from "@visx/scale";
 import { Bar } from "@visx/shape";
 import { TooltipWithBounds } from "@visx/tooltip";
 import withTooltip, { WithTooltipProvidedProps } from "@visx/tooltip/lib/enhancers/withTooltip";
 import React, { useMemo, useState } from "react";
+import { timeConversion } from "./graph";
+
 
 interface LogMsg {
     OccuredAt: number,
@@ -17,27 +19,21 @@ interface BaseEvent {
     EventType: string,
     Details: string,
     InnerDetails: LogMsg[],
+    Type: string,
 }
 interface DurationEvent extends BaseEvent {
-    Duration: number
+    Duration: number,
+    Type: "Duration"
 }
-type EventInfo = BaseEvent | DurationEvent;
+interface TraceEvent extends BaseEvent {
+    Type: "Trace"
+}
+type EventInfo = DurationEvent | TraceEvent;
+
 
 const getOccuredAt = (d: LogMsg) => d.OccuredAt;
 
-const Graph2 = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, tooltipTop, tooltipLeft, showTooltip, hideTooltip}: {log: Log} & WithTooltipProvidedProps<LogMsg>) => {
-    const [dataset, setDataSet] = useState<LogMsg[]>([]);
-    useMemo(() => {
-        const data = log.messages
-        .filter(message => 
-            message.ModName === "Profiler" && 
-            message.LogLevel == LogLevel.TRACE && 
-            message.text[0].startsWith("[RawLog] ")
-        )
-        .map(row => row.text.join("\n").substring("[RawLog] ".length))
-        .map(row => JSON.parse(row) as LogMsg);
-        setDataSet(data);
-    }, [log.messages.length]);
+const Graph2 = withTooltip<{dataset: LogMsg[], colorScale: ReturnType<typeof scaleOrdinal<string, string>>}, string>(({dataset, colorScale, tooltipOpen, tooltipData, tooltipTop, tooltipLeft, showTooltip, hideTooltip}: {dataset: LogMsg[], colorScale: ReturnType<typeof scaleOrdinal<string, string>>,} & WithTooltipProvidedProps<string>) => {
     if (dataset.length == 0) {
         return <div />;
     }
@@ -52,41 +48,43 @@ const Graph2 = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, 
         bottom: 20
     }
     const data = dataset;
+    let lastLogMsg = data[data.length - 1];
+    let lastMsg = lastLogMsg.OccuredAt;
+    if (lastLogMsg.Metadata.Type === "Duration") {
+        lastMsg += lastLogMsg.Metadata.Duration;
+    }
     const xScale = scaleLinear({
-        domain: [getOccuredAt(data[0]), getOccuredAt(data[data.length - 1])],
+        domain: [getOccuredAt(data[0]), lastMsg],
         range: [0, width - margin.left - margin.right]
     });
-    const yScale = scaleLinear({
-        domain: [0, 100],
-        range: [0, 900],
-    })
 
     interface InnerGraphProps {
         row: LogMsg,
         depth?: number,
-        showTooltip: (args: {tooltipData: LogMsg, tooltipTop: number, tooltipLeft: number}) => void,
+        showTooltip: (args: {tooltipData: string, tooltipTop: number, tooltipLeft: number}) => void,
         hideTooltip: () => void,
     }
     const RenderLogRow = function({row, depth=0, showTooltip, hideTooltip}: InnerGraphProps) {
         const x = xScale(row.OccuredAt);
         let width = 0;
         const durationRow = row.Metadata as DurationEvent;
-        if (durationRow.Duration < 10) {
-            return null;
-        }
         const x2 = xScale(row.OccuredAt + (durationRow.Duration ?? 0));
         width = x2 - x;
+        
+        const getColor = (d: LogMsg) => colorScale(d.Metadata.ModId);
         return <>
             <Bar
                 key={row.OccuredAt}
                 x={x}
                 width={width}
-                y={100 * depth}
-                height={100}
+                y={75 * depth}
+                height={75}
+                fill={getColor(row)}
+                stroke="#000"
                 onMouseMove={(() => {
                     showTooltip({
-                        tooltipData: row,
-                        tooltipTop: 100 * depth,
+                        tooltipData: row.Metadata.ModId + ", " + row.Metadata.EventType + " (" + row.Metadata.Details + "), " + timeConversion(durationRow.Duration),
+                        tooltipTop: 75 * depth,
                         tooltipLeft: x
                     })
                 })}
@@ -100,15 +98,8 @@ const Graph2 = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, 
     
 
     const response = <div>
-        <svg width={width} height={1000}>
+        <svg width={width} height={600}>
             {data.map((row, i) => <RenderLogRow key={i} row={row} showTooltip={showTooltip} hideTooltip={hideTooltip} />)}
-            <AxisLeft
-                scale={yScale}
-                tickFormat={(v => v.toString())}
-            />
-            <AxisTop
-                scale={xScale}
-            />
         </svg>
         {tooltipOpen && tooltipData && (
             <TooltipWithBounds top={tooltipTop} left={(tooltipLeft ?? 0) + 50}>

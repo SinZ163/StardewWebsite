@@ -79,9 +79,6 @@ const LogEntry = observer(({log}: {log: Log}) => <Tabs>
     <Tab title="Profiler Analysis (Column Chart)" disabled={!hasProfiler2(log)}>
         <Graph log={log} />
     </Tab>
-    <Tab title="Profiler Analysis (Alternative Experimental)" disabled={!hasProfiler2(log)}>
-        <Graph2 log={log} />
-    </Tab>
 </Tabs>);
 
 const LogViewer = observer(() => {

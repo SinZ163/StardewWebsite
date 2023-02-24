@@ -10,6 +10,10 @@ import { AxisBottom, AxisLeft } from "@visx/axis";
 import withTooltip, { WithTooltipProvidedProps } from "@visx/tooltip/lib/enhancers/withTooltip";
 import { TooltipWithBounds } from "@visx/tooltip";
 
+import type { ScaleOrdinal } from "d3-scale";
+import styled from "styled-components";
+import Graph2 from "./graph2";
+
 interface LogMsg {
     OccuredAt: number,
     Metadata: EventInfo
@@ -20,11 +24,16 @@ interface BaseEvent {
     EventType: string,
     Details: string,
     InnerDetails: LogMsg[],
+    Type: string,
 }
 interface DurationEvent extends BaseEvent {
-    Duration: number
+    Duration: number,
+    Type: "Duration"
 }
-type EventInfo = BaseEvent | DurationEvent;
+interface TraceEvent extends BaseEvent {
+    Type: "Trace"
+}
+type EventInfo = DurationEvent | TraceEvent;
 
 const getOccuredAt = (d: LogMsg) => d.OccuredAt;
 const getDuration = (d: LogMsg) => (d.Metadata as DurationEvent).Duration;
@@ -44,12 +53,13 @@ interface InnerGraphProps extends PropsWithChildren {
     colorScale: ReturnType<typeof scaleOrdinal<string, string>>,
     showTooltip?: (args: {tooltipData: LogMsg, tooltipTop: number, tooltipLeft: number}) => void,
     hideTooltip?: () => void,
+    onClick?: (msg: LogMsg) => void,
 }
 
 let tooltipTimeout: number|null;
 
 // Based off https://stackoverflow.com/a/58826445 with added millisecond support
-function timeConversion(duration: number) {
+export function timeConversion(duration: number) {
     const portions: string[] = [];
   
     const msInHour = 1000 * 60 * 60;
@@ -78,9 +88,9 @@ function timeConversion(duration: number) {
     }
   
     return portions.join(' ');
-  }
+}
 
-const InnerGraph = ({showAxis, data, height, width, children, margin, top, colorScale, showTooltip, hideTooltip}: InnerGraphProps) => {
+const InnerGraph = ({showAxis, data, height, width, children, margin, top, colorScale, showTooltip, hideTooltip, onClick}: InnerGraphProps) => {
     if (data.length == 0) return null;
     const getColor = (d: LogMsg) => colorScale(d.Metadata.ModId);
 
@@ -114,6 +124,7 @@ const InnerGraph = ({showAxis, data, height, width, children, margin, top, color
                     width={3}
                     height={barHeight}
                     fill={getColor(row)}
+                    onClick={onClick ? () => onClick(row) : undefined}
                     onMouseMove={showTooltip && (() => {
                         if (tooltipTimeout) {
                             clearTimeout(tooltipTimeout);
@@ -150,13 +161,14 @@ type LogFilter = (data: LogMsg) => boolean;
 
 const percentFormatter = new Intl.NumberFormat("default", {style: "percent", maximumFractionDigits: 2});
 const Tooltip = ({log, parentDuration}: {log: LogMsg, parentDuration?: number}) => {
-    // TODO: When non duration events show up, we really need a way to make it a discriminated union
-    let eventInfo = log.Metadata as DurationEvent;
+    if (log.Metadata.Type !== "Duration") return null;
+    let eventInfo = log.Metadata;
 
     let parentTime = parentDuration ? parentDuration : eventInfo.Duration;
 
     let innerEvents = eventInfo.InnerDetails.concat()
-        .sort((a,b) => (b.Metadata as DurationEvent).Duration - (a.Metadata as DurationEvent).Duration);
+        .filter(e => e.Metadata.Type === "Duration" && e.Metadata.Duration >= 1)
+        .sort((a,b) => ((a.Metadata.Type === "Duration" && b.Metadata.Type === "Duration") ? b.Metadata.Duration - (a.Metadata.Duration) : 0));
     let extra: JSX.Element|null = null;
     if (innerEvents.length > 30) {
         let extraEvents = innerEvents.splice(30, innerEvents.length - 30);
@@ -180,37 +192,75 @@ const Tooltip = ({log, parentDuration}: {log: LogMsg, parentDuration?: number}) 
     );
 }
 
+const Overlay = styled.div`
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255,255,255,0.9);
+`;
+const CloseButton = styled.button`
+    position: absolute;
+    top: 0px;
+    right: 0px;
+`;
+const ElementDetails = ({selectedElement, colorScale, unselect}: {selectedElement: LogMsg, colorScale: ReturnType<typeof scaleOrdinal<string, string>>,unselect: ()=>void}) => {
+    let eventInfo = selectedElement.Metadata;
+    if (eventInfo.Type !== "Duration") return null;
+    return <Overlay>
+        <CloseButton onClick={unselect}>Close</CloseButton>
+        <p>{eventInfo.ModId} ({eventInfo.EventType} {eventInfo.Details}) - {timeConversion(eventInfo.Duration)}</p>
+        <div style={{height: "700px", display: "flex", justifyContent: "space-evenly"}}>
+            <Graph2 dataset={[selectedElement]} colorScale={colorScale} />
+        </div>
+    </Overlay>
+}
+
 const Graph = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, tooltipTop, tooltipLeft, showTooltip, hideTooltip}: {log: Log} & WithTooltipProvidedProps<LogMsg>) => {
     const [dataset, setDataSet] = useState<LogMsg[]>([]);
+    const [prevLogLength, setPrevLogLength] = useState<number>(0);
+    const [colorScaleDomain, setColorScaleDomain] = useState<string[]>([]);
+    const [colorScaleRange, setColorScaleRange] = useState<string[]>([]);
+    const [selectedElement, setSelectedElement] = useState<LogMsg|null>(null);
     useMemo(() => {
-        const data = log.messages
-        .filter(message => 
+        console.log(log.messages.length)
+        const rawdata = log.messages
+        .filter((message, i) =>
+            i >= prevLogLength && 
             message.ModName === "Profiler" && 
             message.LogLevel == LogLevel.TRACE && 
             message.text[0].startsWith("[RawLog] ")
-        )
-        .map(row => row.text.join("\n").substring("[RawLog] ".length))
-        .map(row => JSON.parse(row) as LogMsg);
+        );
+        let multilineDebug = rawdata.filter(row => row.text.length > 1);
+        console.log("Multiline messages in Profiler trace RawLogs", multilineDebug.length, multilineDebug);
+        const data = rawdata
+            .map(row => row.text.join("\n").substring("[RawLog] ".length))
+            .map(row => JSON.parse(row) as LogMsg);
         setDataSet(data);
+        setPrevLogLength(log.messages.length);
+        
+        const keys = data.map(row => row.Metadata.ModId).filter((row, i, arr) => arr.indexOf(row) === i);
+        let colors: string[] = [];
+        if (keys.length > 0) {
+            for (let i = 0; i < keys.length; i++) {
+                colors.push(interpolateWarm(i / keys.length));
+            }
+        }
+        setColorScaleDomain(keys);
+        setColorScaleRange(colors);
     }, [log.messages.length]);
     const [filter, setFilter] = useState<LogFilter|null>(null);
-    
-    const keys = dataset.map(row => row.Metadata.ModId).filter((row, i, arr) => arr.indexOf(row) === i);
-    let colors: string[] = [];
-    if (keys.length > 0) {
-        for (let i = 0; i < keys.length; i++) {
-            colors.push(interpolateWarm(i / keys.length));
-        }
-    }
-    const colorScale = scaleOrdinal({
-        domain: keys,
-        range: colors,
-    });
 
     let chartData = dataset;
     if (filter) {
         chartData = chartData.filter(filter);
     }
+    
+    const colorScale = scaleOrdinal({
+        domain: colorScaleDomain,
+        range: colorScaleRange,
+    });
 
     const margin = {
         top: 20,
@@ -239,10 +289,11 @@ const Graph = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, t
             return getOccuredAt(data) >= x0 && getOccuredAt(data) <= x1})
         );
     }
+    if (!colorScale) return <div />;
 
     return <div>
         <svg width={window.innerWidth} height={750}>
-            <InnerGraph data={chartData} showAxis height={500} width={window.innerWidth} margin={margin} colorScale={colorScale} showTooltip={showTooltip} hideTooltip={hideTooltip} />
+            <InnerGraph data={chartData} showAxis height={500} width={window.innerWidth} margin={margin} colorScale={colorScale} showTooltip={showTooltip} hideTooltip={hideTooltip} onClick={setSelectedElement}/>
             <InnerGraph data={dataset} showAxis height={200} width={window.innerWidth} margin={margin} top={550} colorScale={colorScale}>
                 <Brush
                     xScale={brushXScale}
@@ -259,8 +310,9 @@ const Graph = withTooltip<{log: Log}, LogMsg>(({log, tooltipOpen, tooltipData, t
                 />
             </InnerGraph>
         </svg>
+        {selectedElement && <ElementDetails selectedElement={selectedElement} unselect={() => setSelectedElement(null)} colorScale={colorScale} />}
         {tooltipOpen && tooltipData && (
-            <TooltipWithBounds top={tooltipTop} left={(tooltipLeft ?? 0) + 50}>
+            <TooltipWithBounds top={tooltipTop} left={(tooltipLeft ?? 0) + 100}>
                 <Tooltip log={tooltipData} />
             </TooltipWithBounds>
         )}
