@@ -76,6 +76,8 @@ enum ParserState {
 export default class LogParser {
     private log: Log;
     private file: File;
+    private bytesRead: number = 0;
+    private lastSavedProgress: number = 0;
 
     private pendingMessages: Message[] = [];
 
@@ -119,12 +121,15 @@ export default class LogParser {
             }
         }
         this.pendingMessages.push(msg);
-        if (this.pendingMessages.length > 50_000) {
+        let progress = (this.bytesRead / this.file.size) * 100;
+        /*if ((progress - this.lastSavedProgress) > 10) {
+            console.log("Telling the rest of the application about the progress made", progress, this.lastSavedProgress, this.bytesRead, this.file.size);
             runInAction(() => {
                 this.log.messages = this.log.messages.concat(this.pendingMessages);
             })
             this.pendingMessages = [];
-        }
+            this.lastSavedProgress = progress;
+        }*/
     }
 
     private readLogLine(line: string, currentMessage: Message | undefined, firstLine: boolean) {
@@ -150,11 +155,11 @@ export default class LogParser {
                     let lastMessage = currentMessage.text.pop()!;
                     currentMessage = this.readLogLine(lastMessage, currentMessage, true);
                 }
-            } else {
+            } else if (line.length > 0) {
                 currentMessage.text.push(line);
             }
         } else {
-            throw new Error("Not a SMAPI Log");
+            throw new Error("Not a SMAPI Log || " + line );
         }
         return currentMessage;
     }
@@ -163,19 +168,42 @@ export default class LogParser {
         const fileStream = this.file.stream();
         const reader = fileStream.pipeThrough(new TextDecoderStream()).getReader();
         let currentMessage: Message|undefined = undefined;
+        console.log("Parsing file", this.file.size);
+        let first = true;
+        let v2Log = false;
+        let v2Buffer = '';
         while (true) {
             const {done, value} = await reader.read();
             if (done) break;
-            let lines = value.split("\n").map(row => row.trimEnd());
+            if (first && value.startsWith(`{"IsValid":true`)) {
+                v2Log = true;
+            }
+            first = false;
+            if (v2Log) {
+                v2Buffer += value;
+                continue;
+            }
+            this.bytesRead += value?.length ?? 0;
+            let lines = value.split("\n").map(row => row.replace(/\r/g, ''));
             let firstLine = true;
             for (let line of lines) {
                 currentMessage = this.readLogLine(line, currentMessage, firstLine);
                 firstLine = false;
             }
         }
+        if (v2Log) {
+            let v2Json = JSON.parse(v2Buffer);
+            let lines = v2Json.RawText.split("\n").map(row => row.replace(/\r/g, ''));
+            let firstLine = true;
+            for (let line of lines) {
+                currentMessage = this.readLogLine(line, currentMessage, firstLine);
+                firstLine = false;
+            }
+        }
+        console.log("Parsing file", this.file.size);
         runInAction(() => {
             this.log.messages = this.log.messages.concat(this.pendingMessages);
             this.pendingMessages = [];
-        })
+        });
     }
 }
